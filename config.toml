@@ -1,0 +1,5 @@
+
+firefox_binary_path = "/Applications/Firefox.app/Contents/MacOS/firefox"
+profiles = [
+    { firefox_container = "stage", aws_vault_profile = "customs-stage"}
+]
