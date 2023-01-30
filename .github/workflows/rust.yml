@@ -44,4 +44,5 @@ jobs:
         with:
           zip: windows
           bin: aws-vault-firefox-container
+          target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
