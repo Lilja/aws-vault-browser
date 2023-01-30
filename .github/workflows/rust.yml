@@ -36,4 +36,5 @@ jobs:
         uses: taiki-e/upload-rust-binary-action@v1.12.0
         with:
           zip: windows
+          bin: aws-vault-firefox-container
           token: ${{ secrets.GITHUB_TOKEN }}
