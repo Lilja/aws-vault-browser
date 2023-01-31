@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 toml = "0.7.0"
 serde = { version= "1.0.152", features = ["derive"] }
+quicli = "0.4"
+structopt = "0.2"

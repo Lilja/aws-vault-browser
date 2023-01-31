@@ -1,8 +1,10 @@
-use std::env;
+use quicli::prelude::*;
 use std::fs::File;
 use std::io::prelude::*;
+use std::ops::Add;
 use std::process::{Command, ExitCode};
 use std::str;
+use structopt::StructOpt;
 
 use serde::Deserialize;
 
@@ -115,36 +117,73 @@ fn perform_action(conf: Config, action: &String) -> ExitCode {
         for (i, profile) in profiles.iter().enumerate() {
             println!(
                 "{}. aws-vault profile: {}, FF container: {}",
-                i+1,
-                profile.aws_vault_profile, profile.firefox_container
+                i + 1,
+                profile.aws_vault_profile,
+                profile.firefox_container
             )
         }
     }
     return ExitCode::from(0);
 }
 
+#[derive(StructOpt, PartialEq, Eq)]
+enum SubCommand {
+    #[structopt(name = "login")]
+    Login {
+        #[structopt(long = "profile", short = "p")]
+        profile: Option<String>,
+        #[structopt(long = "container", short = "c")]
+        container: Option<String>,
+    },
+    List,
+    Add,
+    Delete,
+}
+
+#[derive(StructOpt)]
+#[structopt(name = "cli")]
+struct Cli {
+    #[structopt(subcommand)]
+    cmd: SubCommand,
+}
+
 fn main() -> ExitCode {
-    let args = env::args().skip(1);
-    if args.len() == 0 {
-        println!("Please provide an argument, [./tool login|add|delete|list]");
-        return ExitCode::from(1);
-    }
-    let mut action = "login";
-    for argument in args {
-        if argument == "login" {
-            action = "login";
-        } else if argument == "list" {
-            action = "list";
+    let args = Cli::from_args();
+    match args.cmd {
+        SubCommand::Login { profile, container } => {
+            match profile {
+                Some(v) => {}
+                None => match container {
+                    Some(c) => {}
+                    None => {
+                        println!("There must be some kind of way out of here");
+                        return ExitCode::from(1);
+                    }
+                },
+            }
+            println!("Login");
+        }
+        SubCommand::List => {
+            println!("List");
+        }
+        SubCommand::Add => {
+            println!("Add");
+        }
+        SubCommand::Delete => {
+            println!("Delete");
         }
     }
+    return ExitCode::from(0);
 
+    /*
     match get_config_file("config.toml".to_owned()) {
         Ok(conf) => {
-            return perform_action(conf, &action.to_owned());
+            return perform_action(conf, &"login".to_owned());
         }
         Err(e) => {
             println!("{}", e);
             return ExitCode::from(1);
         }
     }
+    */
 }
