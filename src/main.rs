@@ -31,9 +31,10 @@ fn get_config_file(file_path: String) -> Result<Config, String> {
             match maybe_config {
                 Ok(config) => return Ok(config),
                 Err(e) => {
-                    println!("Unable parse toml file. Please see following error.");
-                    println!("File located at {}", file_path);
-                    println!("{}", e);
+                    let mut err = String::new();
+                    err.push_str("Unable parse toml file. Please see following error.");
+                    err.push_str(&format!("File located at {}", file_path));
+                    err.push_str(&format!("{}", e));
                     return Err("Unable to parse toml file.".to_owned());
                 }
             }
