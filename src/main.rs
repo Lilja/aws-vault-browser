@@ -1,7 +1,10 @@
+mod firefox;
+mod chrome;
+
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::{prelude::*, self};
 use std::path::Path;
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 use std::{env, str};
 use structopt::StructOpt;
 
@@ -15,7 +18,7 @@ struct Config {
 
 #[derive(Deserialize)]
 struct Profile {
-    firefox_container: String,
+    container: String,
     aws_vault_profile: String,
 }
 
@@ -33,14 +36,16 @@ fn get_config_file(file_path: String) -> Result<Config, String> {
                 Ok(config) => return Ok(config),
                 Err(e) => {
                     let mut err = String::new();
-                    err.push_str("Unable parse toml file. Please see following error.");
-                    err.push_str(&format!("File located at {}", file_path));
+                    err.push_str("Unable parse toml file. Please see following error.\n");
+                    err.push_str(&format!("File located at {}\n", file_path));
                     err.push_str(&format!("{}", e));
-                    return Err("Unable to parse toml file.".to_owned());
+                    return Err(format!("Unable to parse toml file. {}", err));
                 }
             }
         }
-        Err(_) => return Err("Unable to read toml file.".to_owned()),
+        Err(_) => return Err(
+            format!("Unable to read toml file at {}", file_path)
+        ),
     }
 }
 
@@ -56,45 +61,34 @@ fn find_aws_vault_profile<'a>(
     return None;
 }
 
-fn run_firefox_url_in_container(firefox_binary: &String, container: &String, url: &String) {
-    let mut arg = "ext+container:name=".to_owned();
-    arg.push_str(container);
-    arg.push_str("&url=");
-    arg.push_str(url);
-
-    let res = Command::new(firefox_binary).arg(arg).output();
-
-    match res {
-        Ok(_) => {}
-        Err(e) => {
-            println!("{}", e);
-            println!("totally errored");
-        }
-    }
-}
-
 fn get_login_url(profile: &String) -> Result<String, String> {
+    println!("Running aws vault");
     let res = Command::new("aws-vault")
         .args(["login", "--stdout", profile])
         .output();
+    println!("Done!");
+
     match res {
-        Ok(w) => match str::from_utf8(&w.stdout) {
-            Ok(k) => {
-                println!("pre trim {}", k);
-                println!("post trim {}", k.trim());
-                let trimmed = k.trim().replace("&", "%26");
-                return Ok(trimmed.to_owned());
-            }
-            Err(_) => {
-                return Err("Unable to cast to string from vec<u8>".to_owned());
+        Ok(w) => {
+            match str::from_utf8(&w.stdout) {
+                Ok(k) => {
+                    println!("pre trim {}", k);
+                    println!("post trim {}", k.trim());
+                    let trimmed = k.trim().replace("&", "%26");
+                    return Ok(trimmed.to_owned());
+                }
+                Err(_) => {
+                    return Err("Unable to cast to string from vec<u8>".to_owned());
+                }
             }
         },
         Err(_e) => return Err("Unable to start command".to_owned()),
     }
 }
 
-fn login(profiles: Vec<Profile>, av_profile: &String, ff_bin: &String) -> ExitCode {
-    let av_profile = "customs-stage".to_owned();
+fn login(profiles: Vec<Profile>, av_profile: &String, cli_bin: ConfCliPath, browser: String) -> ExitCode {
+    let ff_bin = firefox::get_ff_binary(cli_bin.ff);
+    println!("lol");
     match find_aws_vault_profile(&profiles, &av_profile) {
         Some(k) => {
             let login_url = get_login_url(&k.aws_vault_profile);
@@ -102,7 +96,14 @@ fn login(profiles: Vec<Profile>, av_profile: &String, ff_bin: &String) -> ExitCo
                 println!("Unable to acquire login url");
                 return ExitCode::from(1);
             }
-            run_firefox_url_in_container(&ff_bin, &k.firefox_container, &login_url.unwrap());
+            if browser == "firefox" {
+                firefox::run_firefox_url_in_container(&ff_bin, &k.container, &login_url.unwrap());
+            } else if browser == "chrome" {
+                chrome::run_chrome_url_in_profile(&k.container, &login_url.unwrap());
+            } else {
+                panic!("Unknown browser '{}'", browser);
+
+            }
             println!("found lol");
         }
         None => {
@@ -118,7 +119,7 @@ fn list(profiles: Vec<Profile>) -> ExitCode {
             "{}. aws-vault profile: {}, FF container: {}",
             i + 1,
             profile.aws_vault_profile,
-            profile.firefox_container
+            profile.container
         )
     }
     return ExitCode::from(0);
@@ -126,12 +127,16 @@ fn list(profiles: Vec<Profile>) -> ExitCode {
 
 fn read_config_file_from_different_locations() -> Result<Config, String> {
     let filename = "config.toml";
-    let non_xdg_path = format!("$HOME/.config/fav/{}", &filename);
+    let non_xdg_path = format!("$HOME/.config/avb/{}", &filename);
     match env::var("XDG_CONFIG_HOME") {
         Ok(a) => {
-            return get_config_file(format!("{}/{}", &a, &filename));
+            let xdg_path = format!("{}/avb/{}", &a, &filename);
+            let xdg_path_config_exists = Path::new(&xdg_path).exists();
+            if xdg_path_config_exists {
+                return get_config_file(xdg_path);
+            }
         }
-        Err(b) => {}
+        Err(_) => {}
     }
     if Path::new(&non_xdg_path).exists() {
         return get_config_file(non_xdg_path);
@@ -153,6 +158,8 @@ enum SubCommand {
         profile: Option<String>,
         #[structopt(long = "container", short = "c")]
         container: Option<String>,
+        #[structopt(short, long, default_value = "firefox")]
+        browser: String,
     },
     List,
     Add,
@@ -166,15 +173,23 @@ struct Cli {
     cmd: SubCommand,
 }
 
+struct ConfCliPath {
+    ff: Option<String>,
+    chrome: Option<String>,
+}
+
 fn handle_command(args: Cli, conf: Config) -> ExitCode {
-    let ff_bin = &conf.firefox_binary_path.unwrap_or("firefox".to_owned());
     let profiles = conf.profiles;
+    let cli_bin =  ConfCliPath {
+        ff: conf.firefox_binary_path,
+        chrome: Some("".to_owned()),
+    };
     match args.cmd {
-        SubCommand::Login { profile, container } => {
+        SubCommand::Login { profile, container, browser } => {
             println!("Login");
             match profile {
                 Some(v) => {
-                    return login(profiles, &v, ff_bin);
+                    return login(profiles, &v, cli_bin, browser);
                 }
                 None => match container {
                     Some(_c) => {
@@ -201,9 +216,15 @@ fn handle_command(args: Cli, conf: Config) -> ExitCode {
     return ExitCode::from(0);
 }
 
+
 fn main() -> ExitCode {
+    println!("lol xddddddddddddd");
     let args = Cli::from_args();
+    println!("lol xdd");
     let config_file = read_config_file_from_different_locations();
+
+    println!("lol xd");
+    io::stdout().flush().unwrap();
 
     match config_file {
         Ok(conf_file) => {
