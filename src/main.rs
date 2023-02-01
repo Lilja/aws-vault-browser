@@ -151,17 +151,28 @@ fn main() -> ExitCode {
     let args = Cli::from_args();
     match args.cmd {
         SubCommand::Login { profile, container } => {
+            println!("Login");
             match profile {
-                Some(v) => {}
+                Some(v) => match get_config_file("config.toml".to_owned()) {
+                    Ok(conf) => {
+                        return perform_action(conf, &v);
+                    }
+                    Err(e) => {
+                        println!("{}", e);
+                        return ExitCode::from(1);
+                    }
+                },
                 None => match container {
-                    Some(c) => {}
+                    Some(_c) => {
+                        println!("Not implemented");
+                        return ExitCode::from(1);
+                    }
                     None => {
                         println!("There must be some kind of way out of here");
                         return ExitCode::from(1);
                     }
                 },
             }
-            println!("Login");
         }
         SubCommand::List => {
             println!("List");
@@ -176,14 +187,6 @@ fn main() -> ExitCode {
     return ExitCode::from(0);
 
     /*
-    match get_config_file("config.toml".to_owned()) {
-        Ok(conf) => {
-            return perform_action(conf, &"login".to_owned());
-        }
-        Err(e) => {
-            println!("{}", e);
-            return ExitCode::from(1);
-        }
-    }
+
     */
 }
