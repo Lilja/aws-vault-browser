@@ -1,9 +1,8 @@
-use quicli::prelude::*;
 use std::fs::File;
 use std::io::prelude::*;
-use std::ops::Add;
+use std::path::Path;
 use std::process::{Command, ExitCode};
-use std::str;
+use std::{env, str};
 use structopt::StructOpt;
 
 use serde::Deserialize;
@@ -94,36 +93,56 @@ fn get_login_url(profile: &String) -> Result<String, String> {
     }
 }
 
-fn perform_action(conf: Config, action: &String) -> ExitCode {
-    let ff_bin = &conf.firefox_binary_path.unwrap_or("firefox".to_owned());
-    let profiles = conf.profiles;
-    if action == "login" {
-        let av_profile = "customs-stage".to_owned();
-        match find_aws_vault_profile(&profiles, &av_profile) {
-            Some(k) => {
-                let login_url = get_login_url(&k.aws_vault_profile);
-                if login_url.is_err() {
-                    println!("Unable to acquire login url");
-                    return ExitCode::from(1);
-                }
-                run_firefox_url_in_container(&ff_bin, &k.firefox_container, &login_url.unwrap());
-                println!("found lol");
+fn login(profiles: Vec<Profile>, av_profile: &String, ff_bin: &String) -> ExitCode {
+    let av_profile = "customs-stage".to_owned();
+    match find_aws_vault_profile(&profiles, &av_profile) {
+        Some(k) => {
+            let login_url = get_login_url(&k.aws_vault_profile);
+            if login_url.is_err() {
+                println!("Unable to acquire login url");
+                return ExitCode::from(1);
             }
-            None => {
-                println!("not found lol");
-            }
+            run_firefox_url_in_container(&ff_bin, &k.firefox_container, &login_url.unwrap());
+            println!("found lol");
         }
-    } else if action == "list" {
-        for (i, profile) in profiles.iter().enumerate() {
-            println!(
-                "{}. aws-vault profile: {}, FF container: {}",
-                i + 1,
-                profile.aws_vault_profile,
-                profile.firefox_container
-            )
+        None => {
+            println!("not found lol");
         }
     }
     return ExitCode::from(0);
+}
+
+fn list(profiles: Vec<Profile>) -> ExitCode {
+    for (i, profile) in profiles.iter().enumerate() {
+        println!(
+            "{}. aws-vault profile: {}, FF container: {}",
+            i + 1,
+            profile.aws_vault_profile,
+            profile.firefox_container
+        )
+    }
+    return ExitCode::from(0);
+}
+
+fn read_config_file_from_different_locations() -> Result<Config, String> {
+    let filename = "config.toml";
+    let non_xdg_path = format!("$HOME/.config/fav/{}", &filename);
+    match env::var("XDG_CONFIG_HOME") {
+        Ok(a) => {
+            return get_config_file(format!("{}/{}", &a, &filename));
+        }
+        Err(b) => {}
+    }
+    if Path::new(&non_xdg_path).exists() {
+        return get_config_file(non_xdg_path);
+    }
+    if Path::new(&filename).exists() {
+        return get_config_file(filename.to_owned());
+    }
+
+    return Err(
+        "Unable to find any configuration files. See documentation in github readme".to_owned(),
+    );
 }
 
 #[derive(StructOpt, PartialEq, Eq)]
@@ -147,21 +166,16 @@ struct Cli {
     cmd: SubCommand,
 }
 
-fn main() -> ExitCode {
-    let args = Cli::from_args();
+fn handle_command(args: Cli, conf: Config) -> ExitCode {
+    let ff_bin = &conf.firefox_binary_path.unwrap_or("firefox".to_owned());
+    let profiles = conf.profiles;
     match args.cmd {
         SubCommand::Login { profile, container } => {
             println!("Login");
             match profile {
-                Some(v) => match get_config_file("config.toml".to_owned()) {
-                    Ok(conf) => {
-                        return perform_action(conf, &v);
-                    }
-                    Err(e) => {
-                        println!("{}", e);
-                        return ExitCode::from(1);
-                    }
-                },
+                Some(v) => {
+                    return login(profiles, &v, ff_bin);
+                }
                 None => match container {
                     Some(_c) => {
                         println!("Not implemented");
@@ -175,7 +189,7 @@ fn main() -> ExitCode {
             }
         }
         SubCommand::List => {
-            println!("List");
+            return list(profiles);
         }
         SubCommand::Add => {
             println!("Add");
@@ -185,8 +199,19 @@ fn main() -> ExitCode {
         }
     }
     return ExitCode::from(0);
+}
 
-    /*
+fn main() -> ExitCode {
+    let args = Cli::from_args();
+    let config_file = read_config_file_from_different_locations();
 
-    */
+    match config_file {
+        Ok(conf_file) => {
+            return handle_command(args, conf_file);
+        }
+        Err(e) => {
+            println!("{}", e);
+            return ExitCode::from(1);
+        }
+    }
 }
