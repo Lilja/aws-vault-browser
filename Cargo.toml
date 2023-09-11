@@ -1,6 +1,6 @@
 [package]
 name = "avb"
-version = "0.1.1"
+version = "0.1.5"
 edition = "2021"
 
 [dependencies]
@@ -8,5 +8,6 @@ toml = "0.7.0"
 serde = { version= "1.0.152", features = ["derive"] }
 quicli = "0.4"
 structopt = "0.2"
-crossbeam = "0.8.2"
 uid = "0.1.7"
+env_logger = "0.10.0"
+log = "0.4.20"

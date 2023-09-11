@@ -1,7 +1,7 @@
-use std::{env, fs};
+/*
+use std::fs;
 use std::process::Command;
 
-/*
 pub fn get_chrome_binary(bin_from_conf: Option<String>) -> String {
     match env::var("BROWSER") {
         Ok(k) => {
@@ -17,10 +17,11 @@ pub fn get_chrome_binary(bin_from_conf: Option<String>) -> String {
 }
 */
 
+/*
 pub fn run_chrome_url_in_profile(container: &String, login_url: &String) -> Result<(), String> {
     let mut binary = "chrome-cli";
     if cfg!(target_os = "macos") {
-        binary = "open";
+        binary = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
     }
     let mut cmd = Command::new(binary);
 
@@ -30,22 +31,14 @@ pub fn run_chrome_url_in_profile(container: &String, login_url: &String) -> Resu
         println!("{}", result.unwrap_err());
         return Err(format!("Unable to create directory in {} for google chrome", dir_name));
     }
-    let mut mac_os_args: Vec<&str> = vec![];
-    if cfg!(target_os = "macos") {
-        mac_os_args = vec![
-            "-a",
-            "Google Chrome.app",
-            "-n",
-            "--args",
-        ];
-    }
+    let mac_os_args: Vec<&str> = vec![];
     let dcd = format!("--disk-cache-dir={}", dir_name);
     let udd = format!("--user-data-dir={}", dir_name);
 
     let login_url_quoted = format!("{}", &login_url);
     let args: Vec<&str> = vec![/*&pd,*/ "--no-first-run", &dcd, &udd, &login_url_quoted,];
     let all_args = [mac_os_args, args].concat();
-    println!("{}", all_args.join(" "));
+    debug!("{}", all_args.join(" "));
 
     let res = cmd.args(all_args).output();
 
@@ -53,8 +46,8 @@ pub fn run_chrome_url_in_profile(container: &String, login_url: &String) -> Resu
         Ok(a) => {
             let k = String::from_utf8(a.stdout);
             let j = String::from_utf8(a.stderr);
-            println!("stdout: {}", k.unwrap());
-            println!("stderr: {}", j.unwrap());
+            debug!("stdout: {}", k.unwrap());
+            debug!("stderr: {}", j.unwrap());
         }
         Err(e) => {
             println!("{}", e);
@@ -63,3 +56,4 @@ pub fn run_chrome_url_in_profile(container: &String, login_url: &String) -> Resu
     }
     return Ok(());
 }
+*/
