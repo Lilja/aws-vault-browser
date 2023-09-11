@@ -11,9 +11,9 @@ use std::process::{Command, ExitCode};
 use std::{env, str};
 use structopt::StructOpt;
 
-fn get_login_url(aw_profile: &String) -> Result<String, String> {
+fn get_login_url(av_profile: &String) -> Result<String, String> {
     let mut command = Command::new("aws-vault");
-    command.args(["login", "--stdout", aw_profile]);
+    command.args(["login", "--stdout", av_profile]);
 
     let (status, stdout, _stderr) = thread::run_and_capture(&mut command).unwrap();
     match status.code() {
@@ -44,13 +44,13 @@ fn replace_ampersand_with_url_encoded_ampersand(s: &String) -> String {
 }
 
 fn login(
-    aw_profile: &String,
+    av_profile: &String,
     b_container: &String,
     cli_bin: ConfCliPath,
     browser: String,
 ) -> ExitCode {
     let ff_bin = firefox::get_ff_binary(cli_bin.ff);
-    let maybe_log_url = get_login_url(&aw_profile);
+    let maybe_log_url = get_login_url(&av_profile);
     if maybe_log_url.is_err() {
         return ExitCode::from(1);
     }
@@ -71,7 +71,7 @@ enum SubCommand {
     #[structopt(name = "login")]
     Login {
         #[structopt(long = "profile", short = "p")]
-        aw_profile: String,
+        av_profile: String,
         #[structopt(long = "container", short = "c")]
         b_container: String,
         #[structopt(short, long, default_value = "firefox")]
@@ -102,11 +102,11 @@ fn handle_command(args: Cli) -> ExitCode {
     };
     match args.cmd {
         SubCommand::Login {
-            aw_profile,
+            av_profile,
             b_container,
             browser,
         } => {
-            return login(&aw_profile, &b_container, cli_bin, browser);
+            return login(&av_profile, &b_container, cli_bin, browser);
         }
     }
 }
