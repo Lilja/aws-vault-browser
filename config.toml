@@ -1,5 +1,0 @@
-
-firefox_binary_path = "/Applications/Firefox.app/Contents/MacOS/firefox"
-profiles = [
-    { container = "100tyskaboegar", aws_vault_profile = "customs-stage"}
-]
