@@ -1,150 +1,128 @@
-use std::env;
-use std::fs::File;
-use std::io::prelude::*;
+#[macro_use]
+extern crate log;
+
+mod chrome;
+mod firefox;
+mod thread;
+
+use std::io::{self, prelude::*};
+
 use std::process::{Command, ExitCode};
-use std::str;
+use std::{env, str};
+use structopt::StructOpt;
 
-use serde::Deserialize;
+fn get_login_url(aw_profile: &String) -> Result<String, String> {
+    let mut command = Command::new("aws-vault");
+    command.args(["login", "--stdout", aw_profile]);
 
-#[derive(Deserialize)]
-struct Config {
-    firefox_binary_path: Option<String>,
-    profiles: Vec<Profile>,
-}
-
-#[derive(Deserialize)]
-struct Profile {
-    firefox_container: String,
-    aws_vault_profile: String,
-}
-
-fn get_config_file(file_path: String) -> Result<Config, String> {
-    let file = File::open(&file_path);
-    match file {
-        Ok(mut k) => {
-            let mut contents = String::new();
-            let result = k.read_to_string(&mut contents);
-            if result.is_err() {
-                return Err("Unable to read file as string. ".to_owned());
-            }
-            let maybe_config: Result<Config, toml::de::Error> = toml::from_str(&contents);
-            match maybe_config {
-                Ok(config) => return Ok(config),
-                Err(e) => {
-                    let mut err = String::new();
-                    err.push_str("Unable parse toml file. Please see following error.");
-                    err.push_str(&format!("File located at {}", file_path));
-                    err.push_str(&format!("{}", e));
-                    return Err("Unable to parse toml file.".to_owned());
-                }
+    let (status, stdout, _stderr) = thread::run_and_capture(&mut command).unwrap();
+    match status.code() {
+        Some(code) => {
+            if code != 0 {
+                debug!("Exit code != 0, = {}", code);
+                println!("aws-vault command did not succed");
+                return Err("aws-vault command did not succed".to_owned());
             }
         }
-        Err(_) => return Err("Unable to read toml file.".to_owned()),
+        None => todo!(),
     }
-}
-
-fn find_aws_vault_profile<'a>(
-    profiles: &'a Vec<Profile>,
-    av_profile: &String,
-) -> Option<&'a Profile> {
-    for val in profiles.iter() {
-        if val.aws_vault_profile == *av_profile {
-            return Some(val);
+    match String::from_utf8(stdout) {
+        Ok(i) => {
+            debug!("output from aws-vault {}", i);
+            return Ok(i.lines().last().unwrap().to_owned());
+        }
+        Err(_) => {
+            debug!("Fett med fel bror")
         }
     }
-    return None;
+
+    return Ok("Wut".to_owned());
 }
 
-fn run_firefox_url_in_container(firefox_binary: &String, container: &String, url: &String) {
-    let mut arg = "ext+container:name=".to_owned();
-    arg.push_str(container);
-    arg.push_str("&url=");
-    arg.push_str(url);
+fn replace_ampersand_with_url_encoded_ampersand(s: &String) -> String {
+    return s.replace("&", "%26");
+}
 
-    let res = Command::new(firefox_binary).arg(arg).output();
-
-    match res {
-        Ok(_) => {}
-        Err(e) => {
-            println!("{}", e);
-            println!("totally errored");
-        }
+fn login(
+    aw_profile: &String,
+    b_container: &String,
+    cli_bin: ConfCliPath,
+    browser: String,
+) -> ExitCode {
+    let ff_bin = firefox::get_ff_binary(cli_bin.ff);
+    let maybe_log_url = get_login_url(&aw_profile);
+    if maybe_log_url.is_err() {
+        return ExitCode::from(1);
     }
-}
-
-fn get_login_url(profile: &String) -> Result<String, String> {
-    let res = Command::new("aws-vault")
-        .args(["login", "--stdout", profile])
-        .output();
-    match res {
-        Ok(w) => match str::from_utf8(&w.stdout) {
-            Ok(k) => {
-                println!("pre trim {}", k);
-                println!("post trim {}", k.trim());
-                let trimmed = k.trim().replace("&", "%26");
-                return Ok(trimmed.to_owned());
-            }
-            Err(_) => {
-                return Err("Unable to cast to string from vec<u8>".to_owned());
-            }
-        },
-        Err(_e) => return Err("Unable to start command".to_owned()),
-    }
-}
-
-fn perform_action(conf: Config, action: &String) -> ExitCode {
-    let ff_bin = &conf.firefox_binary_path.unwrap_or("firefox".to_owned());
-    let profiles = conf.profiles;
-    if action == "login" {
-        let av_profile = "customs-stage".to_owned();
-        match find_aws_vault_profile(&profiles, &av_profile) {
-            Some(k) => {
-                let login_url = get_login_url(&k.aws_vault_profile);
-                if login_url.is_err() {
-                    println!("Unable to acquire login url");
-                    return ExitCode::from(1);
-                }
-                run_firefox_url_in_container(&ff_bin, &k.firefox_container, &login_url.unwrap());
-                println!("found lol");
-            }
-            None => {
-                println!("not found lol");
-            }
-        }
-    } else if action == "list" {
-        for (i, profile) in profiles.iter().enumerate() {
-            println!(
-                "{}. aws-vault profile: {}, FF container: {}",
-                i+1,
-                profile.aws_vault_profile, profile.firefox_container
-            )
-        }
+    let raw_url = maybe_log_url.unwrap();
+    if browser == "firefox" {
+        let login_url = replace_ampersand_with_url_encoded_ampersand(&raw_url);
+        firefox::run_firefox_url_in_container(&ff_bin, &b_container, &login_url);
+    } else if browser == "chrome" {
+        panic!("Chrome not supported, it's a mess");
+    } else {
+        panic!("Unknown browser '{}'", browser);
     }
     return ExitCode::from(0);
 }
 
-fn main() -> ExitCode {
-    let args = env::args().skip(1);
-    if args.len() == 0 {
-        println!("Please provide an argument, [./tool login|add|delete|list]");
-        return ExitCode::from(1);
-    }
-    let mut action = "login";
-    for argument in args {
-        if argument == "login" {
-            action = "login";
-        } else if argument == "list" {
-            action = "list";
-        }
-    }
+#[derive(StructOpt, PartialEq, Eq)]
+enum SubCommand {
+    #[structopt(name = "login")]
+    Login {
+        #[structopt(long = "profile", short = "p")]
+        aw_profile: String,
+        #[structopt(long = "container", short = "c")]
+        b_container: String,
+        #[structopt(short, long, default_value = "firefox")]
+        browser: String,
+    },
+}
 
-    match get_config_file("config.toml".to_owned()) {
-        Ok(conf) => {
-            return perform_action(conf, &action.to_owned());
-        }
-        Err(e) => {
-            println!("{}", e);
-            return ExitCode::from(1);
+#[derive(StructOpt)]
+#[structopt(name = "cli")]
+struct Cli {
+    #[structopt(subcommand)]
+    cmd: SubCommand,
+    #[structopt(short, long)]
+    debug: bool,
+    #[structopt(short, long)]
+    browser_path: Option<String>,
+}
+
+struct ConfCliPath {
+    ff: Option<String>,
+    // chrome: Option<String>,
+}
+
+fn handle_command(args: Cli) -> ExitCode {
+    let cli_bin = ConfCliPath {
+        ff: args.browser_path.or(Option::Some("firefox".to_owned())),
+        // chrome: Some("".to_owned()),
+    };
+    match args.cmd {
+        SubCommand::Login {
+            aw_profile,
+            b_container,
+            browser,
+        } => {
+            return login(&aw_profile, &b_container, cli_bin, browser);
         }
     }
+}
+
+fn main() -> ExitCode {
+    let args = Cli::from_args();
+    if env::var("RUST_LOG").is_err() {
+        if args.debug {
+            env::set_var("RUST_LOG", "debug")
+        } else {
+            env::set_var("RUST_LOG", "error")
+        }
+    }
+    env_logger::init();
+
+    io::stdout().flush().unwrap();
+
+    return handle_command(args);
 }
