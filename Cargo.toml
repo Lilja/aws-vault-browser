@@ -1,6 +1,6 @@
 [package]
 name = "avb"
-version = "0.1.9"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -11,3 +11,4 @@ structopt = "0.2"
 uid = "0.1.7"
 env_logger = "0.10.0"
 log = "0.4.20"
+crossbeam = "0.8.2"
